@@ -15,7 +15,7 @@ unset GIT_DIR
 #echo "Current Path : $1"
 #ls -lrta $1
 echo "https://github.com/cloudfoundry/nodejs-buildpack.git" > $1/.cfbuildpacks
-echo "https://github.com/Scalingo/java-buildpack#javaonly" >> $1/.cfbuildpacks
+echo "https://github.com/larskinn/heroku-buildpack-oracle-jdk-only" >> $1/.cfbuildpacks
 echo "-----Buildpack file has been created------"
 #ls -lrta
 for BUILDPACK in $(cat $1/.cfbuildpacks); do
