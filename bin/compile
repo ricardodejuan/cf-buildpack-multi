@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-[ $VERBOSE ] && set -x
+
 set -e
 
 function indent() {
@@ -11,11 +11,18 @@ function indent() {
 }
 
 unset GIT_DIR
-
-ln -s /tmp/ /tmp/staged 2>/dev/null || true
-
-for BUILDPACK in $(grep -v ^# $1/.buildpacks); do
-  dir="$(mktemp -d -t buildpackXXXXX)"
+#ls -lrta
+#echo "Current Path : $1"
+#ls -lrta $1
+echo "https://github.com/cloudfoundry/nodejs-buildpack.git" > $1/.cfbuildpacks
+echo "https://github.com/cloudfoundry/java-buildpack.git" >> $1/.cfbuildpacks
+echo "nodejs==7.10.0" > $1/requirements.txt
+echo "pexpect" >> $1/requirements.txt
+echo "-----Buildpack file has been created------"
+#ls -lrta
+for BUILDPACK in $(cat $1/.cfbuildpacks); do
+  dir=$(mktemp -t buildpackXXXXX)
+  rm -rf $dir
 
   url=${BUILDPACK%#*}
   branch=${BUILDPACK#*#}
@@ -28,13 +35,10 @@ for BUILDPACK in $(grep -v ^# $1/.buildpacks); do
     echo "=====> Downloading Buildpack: $url"
 
     if [[ "$url" =~ \.tgz$ ]]; then
+      mkdir -p "$dir"
       curl -s "$url" | tar xvz -C "$dir" >/dev/null 2>&1
     else
-      git clone --recursive $url $dir >/dev/null 2>&1
-      if [ "$branch" != "" ]; then
-        echo "=====> Checking Out Branch: $branch"
-        (cd $dir && git checkout $branch)
-      fi
+      git clone $url $dir >/dev/null 2>&1
       if [ -f "$dir/.gitmodules" ]; then
         echo "=====> Detected git submodules. Initializing..."
         (cd $dir && git submodule update --init --recursive)
@@ -42,32 +46,38 @@ for BUILDPACK in $(grep -v ^# $1/.buildpacks); do
     fi
     cd $dir
 
+    if [ "$branch" != "" ]; then
+      git checkout $branch >/dev/null 2>&1
+    fi
+
     # we'll get errors later if these are needed and don't exist
     chmod -f +x $dir/bin/{detect,compile,release} || true
 
-    framework=$($dir/bin/detect $1)
-
+    framework=$($dir/bin/detect $1 || true)
     if [ $? == 0 ]; then
       echo "=====> Detected Framework: $framework"
-      $dir/bin/compile $1 $2 $3
+    else
+      echo "=====> Detection failed - ignoring result"
+    fi
 
-      if [ $? != 0 ]; then
-        exit 1
-      fi
+    $dir/bin/compile $1 $2 $3
 
-      # check if the buildpack left behind an environment for subsequent ones
-      if [ -e $dir/export ]; then
-        source $dir/export
-      fi
+    if [ $? != 0 ]; then
+      exit 1
+    fi
 
-      if [ -x $dir/bin/release ]; then
-        $dir/bin/release $1 > $1/current_pack_release.out
-        mv $1/current_pack_release.out $1/last_pack_release.out
-      fi
+    # check if the buildpack left behind an environment for subsequent ones
+    if [ -e $dir/export ]; then
+      source $dir/export
+    fi
+
+    if [ -x $dir/bin/release ]; then
+      $dir/bin/release $1 > $1/last_pack_release.out
     fi
   fi
 done
 
 if [ -e $1/last_pack_release.out ]; then
   echo "Using release configuration from last framework ($framework)."
+  cat $1/last_pack_release.out
 fi
